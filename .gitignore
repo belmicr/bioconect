@@ -227,3 +227,6 @@ dist/
 
 # Docker
 *.log
+# Backend - base de datos local (SQLite, solo para desarrollo sin Docker)
+backend/*.db
+backend/local.db
