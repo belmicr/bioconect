@@ -92,3 +92,45 @@ incluido) pero bajo el tag `latest`, dejando `v0.1.0` desactualizado.
 Se corrigió re-etiquetando `v0.1.0` para que apunte al mismo hash que
 `latest` antes de publicar en ghcr.io — lección: verificar siempre qué
 imagen representa exactamente el tag que se publica. 
+
+## TP3 — Planificación (GitHub Projects)
+
+### Duración del sprint
+No se pudo configurar el campo Iteration por un problema de la interfaz
+de GitHub Projects (el campo de texto para nombrar un nuevo field no
+aceptaba input, probado con selección de texto, recarga de página y
+reintento posterior sin éxito). Se documenta como limitación de la
+herramienta encontrada durante el TP, pendiente de resolución. De
+haberse podido configurar, la duración elegida hubiera sido 1 semana
+por iteración, dado que trabajando sola conviene tener ciclos cortos
+de feedback en vez de sprints largos.
+
+### Límite de trabajo en progreso
+Se configuró en 2 para la columna "En curso", siguiendo la fórmula de
+la cátedra (personas + 1). Al trabajar sola en el proyecto, esto da un
+poco de margen para tener una tarea principal en curso más una
+secundaria si la primera queda bloqueada, sin permitir dispersión.
+
+### Diagnóstico de la historia mal escrita
+"Como desarrollador quiero optimizar la base de datos": no tiene
+beneficiario real (ningún usuario final "quiere" una optimización sin
+un beneficio de negocio asociado), no es testeable (¿optimizar qué
+métrica, hasta qué punto?), y viola los criterios V (Valiosa) y T
+(Testeable) de INVEST. Es en realidad una tarea técnica disfrazada de
+historia de usuario.
+
+### Problemas encontrados
+- Jerarquía de sub-issues inicial mal armada: las dos tareas quedaron
+  colgando directamente de la épica en vez de la historia. Se corrigió
+  removiéndolas como sub-issues de la épica y re-vinculándolas
+  correctamente desde la historia.
+- Campo Iteration con problema de input persistente: el campo de texto
+  para nombrar un nuevo field no aceptaba escritura, incluso después de
+  recargar la página y reintentar. No se logró resolver dentro del
+  tiempo disponible para este TP.
+
+### Uso de IA
+Usé Claude para navegar la interfaz de GitHub Projects (sub-issues,
+automatizaciones, límites de WIP), diagnosticar el problema del campo
+Iteration, y armar la historia de usuario con criterios de aceptación
+verificables.
