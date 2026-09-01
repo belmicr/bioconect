@@ -230,3 +230,4 @@ dist/
 # Backend - base de datos local (SQLite, solo para desarrollo sin Docker)
 backend/*.db
 backend/local.db
+backend/uploads/
