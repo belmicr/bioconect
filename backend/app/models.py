@@ -19,3 +19,38 @@ class Usuario(SQLModel, table=True):
 
     # Campo específico de bioquímico (queda vacío si rol="paciente")
     matricula: Optional[str] = None
+
+class Estudio(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    paciente_id: int = Field(foreign_key="usuario.id")
+    bioquimico_id: int = Field(foreign_key="usuario.id")
+    archivo: str
+    descripcion: Optional[str] = None
+    fecha_carga: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Turno(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    paciente_id: int = Field(foreign_key="usuario.id")
+    bioquimico_id: int = Field(foreign_key="usuario.id")
+    fecha_hora: datetime
+    estado: str = Field(default="pendiente")  # pendiente, confirmado, cancelado
+
+
+class ChatMensaje(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    paciente_id: int = Field(foreign_key="usuario.id")
+    bioquimico_id: int = Field(foreign_key="usuario.id")
+    emisor: str  # "paciente" o "bioquimico"
+    contenido: str
+    fecha_envio: datetime = Field(default_factory=datetime.utcnow)
+
+
+class PedidoMedico(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    paciente_id: int = Field(foreign_key="usuario.id")
+    bioquimico_id: int = Field(foreign_key="usuario.id")
+    archivo: str
+    indicaciones: Optional[str] = None
+    estado: str = Field(default="pendiente")  # pendiente, respondido
+    fecha_carga: datetime = Field(default_factory=datetime.utcnow)    
