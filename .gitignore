@@ -231,3 +231,4 @@ dist/
 backend/*.db
 backend/local.db
 backend/uploads/
+backend/*test*.json
