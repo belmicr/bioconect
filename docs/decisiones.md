@@ -134,3 +134,52 @@ Usé Claude para navegar la interfaz de GitHub Projects (sub-issues,
 automatizaciones, límites de WIP), diagnosticar el problema del campo
 Iteration, y armar la historia de usuario con criterios de aceptación
 verificables.
+## Modelo de datos completo (post-TP3)
+
+### Diseño
+Se implementó el modelo completo de BioConect con 5 entidades:
+Usuario (con rol bioquimico/paciente en una sola tabla, simplificando
+el login), Estudio, Turno, ChatMensaje y PedidoMedico. Se optó por una
+sola tabla Usuario con campo `rol` en vez de tablas separadas por rol,
+priorizando simplicidad de código sobre pureza del modelo relacional,
+dado el alcance acotado a 2 roles definido para la materia.
+
+### Seguridad de contraseñas
+Se usa bcrypt (vía passlib) para el hash de contraseñas, nunca texto
+plano. Se generan tokens JWT en el login, incluyendo el rol del
+usuario para que el frontend pueda dirigir a la pantalla correcta.
+
+### Resolución del bug documentado en TP3
+El bug #13 ("El turno no valida solapamiento de horarios para el mismo
+bioquímico") se resolvió agregando una validación en POST /turnos que
+rechaza la creación de un turno si el bioquímico ya tiene otro turno
+no cancelado en el mismo horario.
+
+### Problema de trazabilidad: Closes #N sin completar
+Al armar el PR que resolvía el bug #13, se dejó por error el
+placeholder `Closes #N` sin reemplazar por el número real del issue,
+y el PR se mergeó así. Como GitHub no reconoce "#N" como referencia
+válida, el cierre automático no se disparó. Se corrigió en dos pasos:
+(1) editando la descripción del PR ya mergeado para reemplazar `#N`
+por `#13` (esto vincula el PR al issue, pero no lo cierra
+retroactivamente, ya que la automatización de cierre solo actúa en el
+momento del merge), y (2) cerrando el issue #13 manualmente con un
+comentario explicando qué PR lo resolvió. Lección: verificar siempre
+que los placeholders de un PR estén completados antes de mergear,
+porque el cierre automático no es recuperable después del hecho.
+
+### Problemas encontrados
+- Passlib con bcrypt: passlib esperaba un atributo interno
+  (`__about__`) que versiones recientes de bcrypt ya no exponen,
+  causando `AttributeError` y luego `ValueError: password cannot be
+  longer than 72 bytes`. Se resolvió fijando `bcrypt==4.0.1` en
+  requirements.txt.
+- Falta de python-multipart al reinstalar el entorno virtual desde
+  cero (tras el incidente de OneDrive del TP2): FastAPI necesita este
+  paquete para procesar UploadFile/File, pero no quedó registrado en
+  requirements.txt en su momento. Se agregó explícitamente.
+
+### Uso de IA
+Usé Claude para diseñar el modelo de datos, diagnosticar los errores
+de passlib/bcrypt y python-multipart, y para entender y corregir el
+problema del placeholder Closes #N sin completar.
