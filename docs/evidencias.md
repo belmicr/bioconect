@@ -73,3 +73,29 @@ la red interna de compose).
 - ghcr.io/belmicr/bioconect-backend:v0.1.0 (público)
 - ghcr.io/belmicr/bioconect-frontend:v0.1.0 (público)
 ![Registry público: paquetes en GitHub](evidencias/07-registry-publico.png)
+
+## TP4 — CI (GitHub Actions)
+
+### Gate: build roto bloquea el merge
+Se rompió a propósito la imagen base del Dockerfile del backend (tag
+inexistente). El check build-backend falló, quedando marcado como
+"Required" y en rojo. El botón "Aplastar y fusionar" quedó
+deshabilitado, confirmando que el gate bloquea de verdad, no es solo
+informativo.
+
+![Check fallido bloqueando el merge](evidencias/08-ci-check-fallido.png)
+
+### Gate: fix restaura el merge
+Se revirtió el cambio al Dockerfile. Los dos checks (build-backend,
+build-frontend) volvieron a pasar en verde, y el botón "Aplastar y
+fusionar" quedó habilitado nuevamente.
+
+![Checks exitosos, merge habilitado](evidencias/09-ci-check-exitoso.png)
+
+
+### Pipeline visible en la pestaña Actions
+El workflow "TP4: agregar flujo de trabajo de CI con GitHub Actions"
+corrió exitosamente en 39 segundos, visible desde la vista general de
+Actions del repositorio.
+
+![Pipeline en la pestaña Actions](evidencias/10-ci-actions-verde.png)
