@@ -46,6 +46,7 @@ http://localhost:8000/health → {"status":"ok"}
 http://localhost:3000 → app React servida por nginx, con proxy /api
 funcionando hacia el backend (nombre de servicio "backend" resuelto por
 la red interna de compose).
+![Compose up end-to-end](evidencias/05-compose-up-end-to-end.png)
 
 ### Persistencia: down/up vs down -v
 1. Se creó una tabla de prueba con un dato:
@@ -60,6 +61,8 @@ la red interna de compose).
    ERROR: relation "prueba_persistencia" does not exist
    El -v borró el volumen; Postgres reinicializó desde cero.
 
+![Persistencia: dato sobrevive a down/up normal](evidencias/06-persistencia-down-up.png)
+
 ### Tamaños de imagen
 - bioconect-backend:v0.1.0 → 167MB (vs python:3.12-slim base: 119MB)
 - bioconect-frontend:v0.1.0 → 48.5MB (vs node:24-alpine, descartado en
@@ -69,3 +72,4 @@ la red interna de compose).
 - https://github.com/belmicr?tab=packages
 - ghcr.io/belmicr/bioconect-backend:v0.1.0 (público)
 - ghcr.io/belmicr/bioconect-frontend:v0.1.0 (público)
+![Registry público: paquetes en GitHub](evidencias/07-registry-publico.png)
