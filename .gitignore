@@ -234,3 +234,7 @@ backend/uploads/
 backend/*test*.json
 # El front tiene src/lib con lógica propia; la plantilla de Python ignora "lib/"
 !frontend/src/lib/
+# Reportes de coverage generados por los tests
+coverage/
+frontend-coverage/
+backend-results/

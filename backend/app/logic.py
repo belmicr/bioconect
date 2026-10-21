@@ -44,3 +44,12 @@ def horarios_del_dia(dia: date) -> list[datetime]:
         horarios.append(actual)
         actual += timedelta(minutes=30)
     return horarios
+
+def reservar_turno(repo, paciente_id: int, bioquimico_id: int, fecha_hora: datetime):
+    """Regla de negocio de reservar un turno. 'repo' entra desde afuera (inyección de dependencias)."""
+    motivo = validar_horario_turno(fecha_hora)
+    if motivo:
+        raise ValueError(motivo)
+    if fecha_hora in repo.ocupados(bioquimico_id):
+        raise ValueError("El bioquímico ya tiene un turno en ese horario")
+    return repo.guardar(paciente_id, bioquimico_id, fecha_hora)

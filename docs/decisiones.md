@@ -306,3 +306,118 @@ mergear, porque el cierre automático no es recuperable después del hecho.
 Usé Claude para diseñar el modelo de datos, diagnosticar los errores de
 passlib/bcrypt y python-multipart, y para entender y corregir el problema
 del placeholder Closes #N sin completar.
+
+## TP5 — Calidad automatizada: tests, coverage y umbral que frena un merge
+
+### Enlaces que prueban cada decisión
+- Corrida en verde, con el resumen de coverage y el reporte descargable: <<COMPLETAR: URL de actions/runs/ID>>
+- PR que agrega los tests y el umbral: <<COMPLETAR: URL de pull/N>>
+- Corrida en rojo por umbral, con el número en el log: <<COMPLETAR: URL de actions/runs/ID>>
+- PR 1, mergeado (rojo por cobertura, tests que faltaban, verde, merge): <<COMPLETAR: URL de pull/N>>
+- PR 2, abierto y en rojo hasta la defensa: <<COMPLETAR: URL de pull/M>>
+- Release v5.0.0: <<COMPLETAR: URL de la release>>
+
+### Qué testeé y por qué esa lógica
+Elegí testear donde un bug duele en BioConect, que maneja resultados médicos:
+- **Guardias de acceso (`deps.py`)**: si una puerta deja pasar a quien no debe, un paciente ve estudios de otro. Es el bug más caro de la app.
+- **Reglas de turnos (`logic.py`)**: validación de horario (lunes a viernes, de 8:00 a 17:30, cada 30 minutos), grilla de horarios del día y reserva sin solapamiento. Un bug acá pisa la agenda del bioquímico.
+- **Validación de PDF y de contraseña (`logic.py`)**: decide qué entra al sistema. Incluye el límite de 72 bytes de bcrypt.
+- **Seguridad (`security.py`)**: el hash no es texto plano, el token conserva usuario y rol, y un token adulterado se rechaza.
+- **Front (`src/lib` y `src/api/servicios.js`)**: validación de formularios, formato de fechas, filtros y orden. En fechas hay una razón concreta: el backend manda `fecha_carga` en UTC sin zona, y sin interpretarla como UTC la pantalla mostraría 3 horas corridas.
+
+**Cantidad.** Backend: 23 funciones de test que corren como 30 casos (los parametrizados cuentan uno por dato), repartidas sobre 8 reglas distintas. Frontend: 49 tests en 4 archivos.
+
+Las tres técnicas están en los dos lados:
+
+| Técnica | Backend (pytest) | Frontend (vitest) |
+|---|---|---|
+| Parametrizado | `test_solo_se_aceptan_pdf_reales` y `test_franja_horaria_incluye_los_bordes` (`@pytest.mark.parametrize`) | `it.each` en `validaciones.test.js` y `fechas.test.js` |
+| Caso de error | `test_password_corta_es_rechazada_y_dice_el_minimo` (también prueba que el mensaje diga el límite) | `rechaza un mensaje que supera el largo máximo y dice el límite` |
+| Con mock | `test_reservar_turno_solapado_no_guarda_nada` | `cargarEstudios` con `vi.fn()` en `servicios.test.js` |
+
+### Refactor que hizo posible el mock
+Antes, `crear_turno` en `main.py` mezclaba la regla de negocio con el acceso a la base: consultaba la agenda y guardaba el turno con la `session` adentro. Para probar la regla había que tener una base real, así que el test era de integración y no unitario.
+
+Saqué la regla a `reservar_turno(repo, ...)` en `logic.py`, que **recibe la dependencia desde afuera**, y dejé el acceso a datos en la clase `RepoTurnos` de `main.py`. El endpoint pasó a calcular quién es el paciente y el bioquímico y a delegar. La validación de horario y de agenda libre **sigue adentro** de `reservar_turno`, o sea que el refactor no le sacó ninguna regla.
+
+Los tests le pasan un `Mock()` como `repo`. Es un test de **mock** y no de stub porque no solo le dice qué devolver (`ocupados.return_value`), también verifica la interacción: `guardar` se llama una sola vez, no se llama si el turno se solapa, y `ocupados` ni se consulta si el horario ya era inválido.
+
+### Mi umbral
+**Backend: 90 %**, sobre el porcentaje combinado de líneas y ramas (activé `branch = True` en `.coveragerc`).
+- **Mi medición real:** la primera corrida dio 96 % en total (líneas 97,6 %, ramas 92,9 %), con `deps.py` en 89 %. Después de cerrar ese hueco quedó en **100 % de líneas y 100 % de ramas** (85 sentencias y 28 ramas, todas cubiertas).
+- **Por qué 90 y no 100:** un 100 % fijo haría que una línea defensiva imposible de alcanzar rompa el build sin que haya un riesgo real. Con 90 hay margen para ruido, pero una función nueva sin tests baja el total y frena el merge. Es un número anclado en mi medición, no una regla copiada.
+
+**Frontend: 80 % en líneas y 80 % en ramas** (`coverage.thresholds` en `vite.config.js`).
+- **Mi medición real:** la primera corrida dio 100 % de líneas y 97,56 % de ramas. Tras agregar un test quedó en **100 % de líneas y 100 % de ramas** (49 tests).
+- **Por qué 80:** deja margen de 20 puntos, así un cambio chico no rompe el build por una línea, pero una función nueva con lógica y sin tests lo hace caer.
+
+**Número de rama que da hoy:** 100 % en los dos lados.
+
+**Qué haría falta para subirlo:** en el backend, testear los endpoints de `main.py` con el cliente de pruebas de FastAPI y una base de prueba. En el front, testear los componentes de pantalla. Hoy los dos están fuera de la cuenta.
+
+### Qué dejé afuera de la cuenta y por qué
+- **`main.py`**: es el cableado de HTTP (rutas, formularios, archivos). Se prueba de punta a punta contra QA en el TP7.
+- **`models.py`**: clases de datos, solo propiedades y ninguna regla.
+- **`database.py`**: la conexión. Si está mal, la app no arranca y me entero enseguida.
+- **`__init__.py`**: vacío.
+- **Frontend:** `src/api/cliente.js` (habla con la red), `AuthContext.jsx`, `componentes/`, `paginas/`, `App.jsx` y `main.jsx`. Es interfaz y pegamento, y se verifica en el e2e del TP7. Entra a la cuenta solo lo que tiene lógica: `src/lib/**` y `src/api/servicios.js`.
+
+**Una limitación honesta:** excluir `main.py` vale cuando ahí no queda lógica, y en mi caso quedaron dos helpers de autorización (`paciente_de` y `par_chat`) que son reglas de negocio y hoy no mide ningún test. Mi 100 % es de la lógica pura, la seguridad y los guardias, no de esa autorización. Mi próximo paso es moverlos a `logic.py` y testearlos.
+
+### Por qué un coverage alto no garantiza calidad (con mi ejemplo)
+Coverage mide qué líneas se ejecutaron, no qué se comprobó. En mi código: si agrego un test que llama `solo_bioquimico(SimpleNamespace(rol="bioquimico"))` **sin ningún assert**, el `return` queda cubierto y el porcentaje sube, pero el test no verifica que la puerta deje pasar al usuario correcto. Si alguien cambia esa función para que devuelva siempre 403, el test sigue en verde.
+
+Lo viví al revés con mi propio número: `deps.py` estaba en 89 % porque mis tests solo probaban que la puerta rechaza a quien no debe. Un guardia roto que rechazara a todos pasaba todos mis tests. Coverage bajo sí es una señal confiable de agujero, y coverage alto no lo es de calidad.
+
+### El ejercicio del camino sin cubrir
+Hice el ejercicio en los dos lados.
+
+**Backend (`deps.py`, líneas 32 y 38):**
+1. **Qué línea es:** el `return u` de `solo_bioquimico` y de `solo_paciente`, o sea el camino en que el usuario **sí** tiene el rol correcto y la puerta lo deja pasar. El reporte las marcó como faltantes y las dos ramas quedaron "parciales".
+2. **Qué entrada la recorrería:** `SimpleNamespace(rol="bioquimico")` para la 32 y `SimpleNamespace(rol="paciente")` para la 38.
+3. **Qué decidí:** agregué los dos tests. Un guardia que siempre dijera 403 habría pasado todos mis tests anteriores. Con eso, `deps.py` pasó de 89 % a 100 %.
+
+**Frontend (`datos.js`, línea 6):**
+1. **Qué línea es:** `const busqueda = (texto ?? '').trim().toLowerCase()` en `filtrarPorTexto`. La línea figuraba cubierta pero la rama del `??` no: mis tests nunca pasaban `texto` nulo.
+2. **Qué entrada la recorrería:** `filtrarPorTexto(estudios, null)`.
+3. **Qué decidí:** agregué `sin texto (nulo) devuelve todos`. Si el buscador llegara a mandar un valor nulo, sin ese camino probado el filtro rompería en pantalla sin que ningún test lo detectara. Las ramas del front pasaron de 97,56 % a 100 %.
+
+### Cómo rompe el build mi umbral
+- **Backend:** `backend/Dockerfile` tiene una etapa `test` cuyo `ENTRYPOINT` es `pytest --cov ... --cov-fail-under=90`. Si la cobertura baja de 90, pytest sale con error, el `docker run` del CI devuelve ese error, el job `build-backend` queda rojo y, como es un required check de `main`, el merge se bloquea.
+- **Frontend:** `thresholds` en `vite.config.js`. Si la cobertura no llega, vitest sale con error y se repite la misma cadena con `build-frontend`.
+- No agregué ningún job ni ninguna regla de rama: el gate del TP4 ya vigilaba esos dos checks, y ahora pueden ponerse rojos por calidad y no solo por compilación.
+- La etapa de tests va **en el medio** de los Dockerfiles, y la imagen de producción no lleva pytest ni los tests adentro.
+
+### Mi PR bloqueado
+- **PR 1:** <<COMPLETAR: link>>. Agregué código nuevo sin tests (<<COMPLETAR: qué función y en qué archivo>>). Compilaba bien y todos los tests existentes pasaban, pero el check `<<COMPLETAR: build-backend o build-frontend>>` se puso rojo por cobertura: <<COMPLETAR: pegá la línea del log con el número, por ejemplo "ERROR: Coverage for lines (74.13%) does not meet global threshold (80%)">>. La métrica que frenó fue <<COMPLETAR: líneas, ramas o las dos; el log lo dice>>, con vitest 5.0.5 / pytest-cov 7.1.0. Para arreglarlo escribí <<COMPLETAR: N tests, uno por cada camino del código nuevo>>. Después el check pasó a verde y mergeé.
+- **PR 2:** <<COMPLETAR: link>>. Lo dejé abierto y en rojo a propósito, con el mismo problema sin arreglar, para que se pueda comprobar el freno sin depender de mis capturas.
+
+**Por qué compilaba, pasaba los tests y no se podía mergear:** porque los tests en verde solo dicen que lo que existe funciona, no que todo el código nuevo esté probado. Mi umbral mide cuánto de la lógica ejercitan los tests, y ese número cayó por debajo de lo que yo mismo había declarado.
+
+### Qué pasaría si subo el umbral diez puntos
+En el backend pasaría a 100 %. Hoy lo cumplo, pero sería frágil: cualquier línea nueva sin un test, aunque sea trivial o defensiva, rompería el build. Eso lleva a que la gente termine apagando el gate. Prefiero un 90 que puedo sostener a un 100 que vivo esquivando.
+
+### Herramientas que usé (mi stack no es el de la cátedra)
+
+| Lo que había que lograr | Backend (Python 3.12) | Frontend (JS) |
+|---|---|---|
+| Test parametrizado | `@pytest.mark.parametrize` | `it.each` |
+| Doble (mock) | `unittest.mock.Mock` | `vi.fn()` |
+| Medir cobertura | `pytest-cov` 7.1.0 (coverage.py 7.16.2) | `@vitest/coverage-v8` 5.0.5 |
+| Umbral que frena | `--cov-fail-under=90` | `coverage.thresholds` |
+| Qué entra en la cuenta | `omit` en `.coveragerc` | `coverage.include` |
+| Herramientas de test en la etapa de tests | `requirements-dev.txt`, instalado solo en esa etapa | `npm ci` sin `--omit=dev` |
+| Reporte visible y descargable | resumen en el Summary de la corrida y artefacto `coverage-backend` | ídem, artefacto `coverage-frontend` |
+
+### Problemas encontrados
+- **El build del front pasaba en mi máquina y falló en el CI.** Mi `.gitignore` es la plantilla de Python, que ignora cualquier carpeta `lib/`, y `frontend/src/lib/` nunca se subió al repo. El CI construye solo con lo que hay en GitHub, así que falló con `Could not resolve '../lib/validaciones.js'` y el gate frenó el merge. Lo resolví con `!frontend/src/lib/` en el `.gitignore`. Lo encontré porque el pipeline construye desde el repo y no desde mi máquina.
+- **Dos archivos de test del front quedaron como `.tests.js`.** Vitest solo detecta `.test.js`, así que al comprobar vi que solo 2 de los 4 se iban a ejecutar. Los renombré.
+- **Vitest 5 exige el paquete de cobertura de la misma versión mayor.** Instalé `@vitest/coverage-v8@5` para que coincida con `vitest@5.0.5` y verifiqué con `npm ls` que quedaran en la misma versión.
+- **OneDrive dejó roto mi entorno virtual.** `pip` fallaba con `OSError: [Errno 22]` porque los archivos dentro de `venv` eran marcadores de la nube y no archivos reales. Lo resolví creando un entorno nuevo fuera de OneDrive, en `C:\venvs\bioconect`.
+- **VS Code creó solo un `.venv` con Python 3.14 y lo activaba en cada terminal**, pisando el mío (3.12). Lo desactivé con `python.terminal.activateEnvironment` en `false`.
+- **OneDrive bloqueó `git checkout`** al cambiar de rama y dejó archivos borrados a medias. Con `git restore .` los recuperé y creé la rama nueva directo desde `origin/main`.
+- **Docker Desktop estaba pausado** y `docker build` fallaba con `docker daemon is not running`.
+- <<COMPLETAR: cualquier problema nuevo que aparezca en el CI o en los PR de demostración>>
+
+### Uso de IA
+Usé Claude para diseñar la estructura de tests, proponer el refactor de `reservar_turno`, armar la configuración de `pytest-cov` y `vitest`, la etapa de tests de los dos Dockerfiles y los pasos del `ci.yml`, y para diagnosticar los errores de la lista anterior. Lo verifiqué corriendo los tests en mi máquina y dentro del contenedor Linux (30 casos y 100 % en el backend, 49 tests y 100 % en el front), leyendo los reportes de cobertura para elegir el ejercicio del camino sin cubrir, y comprobando que el CI se pusiera rojo cuando debía. Puedo explicar qué verifica cada assert y qué caso no está cubierto.

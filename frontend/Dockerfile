@@ -6,7 +6,11 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# ---- Etapa 2: servir con nginx ----
+# ---- Etapa 2: tests (parte del build: ya tiene Node y las dependencias de desarrollo) ----
+FROM build AS test
+ENTRYPOINT ["npm", "run", "test:ci"]
+
+# ---- Etapa 3: servir con nginx ----
 FROM nginx:1.27-alpine AS final
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
