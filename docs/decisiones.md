@@ -310,12 +310,13 @@ del placeholder Closes #N sin completar.
 ## TP5 — Calidad automatizada: tests, coverage y umbral que frena un merge
 
 ### Enlaces que prueban cada decisión
-- Corrida en verde, con el resumen de coverage y el reporte descargable: <<COMPLETAR: URL de actions/runs/ID>>
-- PR que agrega los tests y el umbral: <<COMPLETAR: URL de pull/N>>
-- Corrida en rojo por umbral, con el número en el log: <<COMPLETAR: URL de actions/runs/ID>>
-- PR 1, mergeado (rojo por cobertura, tests que faltaban, verde, merge): <<COMPLETAR: URL de pull/N>>
-- PR 2, abierto y en rojo hasta la defensa: <<COMPLETAR: URL de pull/M>>
-- Release v5.0.0: <<COMPLETAR: URL de la release>>
+- Corrida en verde, con el resumen de coverage y el reporte descargable: https://github.com/belmicr/bioconect/actions/runs/39681719075
+- PR que agrega los tests, las etapas de tests y el umbral: https://github.com/belmicr/bioconect/pull/34
+- PR 1, mergeado (rojo por cobertura, tests que faltaban, verde, merge): https://github.com/belmicr/bioconect/pull/35
+- Corrida en rojo por umbral del PR 1: https://github.com/belmicr/bioconect/actions/runs/39683949371
+- PR 2, abierto y en rojo hasta la defensa: https://github.com/belmicr/bioconect/pull/36
+- Corrida en rojo por umbral del PR 2, con el número en el log: https://github.com/belmicr/bioconect/actions/runs/39687279489
+- Release v5.0.0: https://github.com/belmicr/bioconect/releases/tag/v5.0.0
 
 ### Qué testeé y por qué esa lógica
 Elegí testear donde un bug duele en BioConect, que maneja resultados médicos:
@@ -325,13 +326,13 @@ Elegí testear donde un bug duele en BioConect, que maneja resultados médicos:
 - **Seguridad (`security.py`)**: el hash no es texto plano, el token conserva usuario y rol, y un token adulterado se rechaza.
 - **Front (`src/lib` y `src/api/servicios.js`)**: validación de formularios, formato de fechas, filtros y orden. En fechas hay una razón concreta: el backend manda `fecha_carga` en UTC sin zona, y sin interpretarla como UTC la pantalla mostraría 3 horas corridas.
 
-**Cantidad.** Backend: 23 funciones de test que corren como 30 casos (los parametrizados cuentan uno por dato), repartidas sobre 8 reglas distintas. Frontend: 49 tests en 4 archivos.
+**Cantidad.** Backend: 23 funciones de test que corren como 30 casos (los parametrizados cuentan uno por dato), repartidas sobre 8 reglas distintas. Frontend: 49 tests en 4 archivos en el PR del umbral, y 68 después del PR 1 (se suman los 19 de `antiguedad.test.js`).
 
 Las tres técnicas están en los dos lados:
 
 | Técnica | Backend (pytest) | Frontend (vitest) |
 |---|---|---|
-| Parametrizado | `test_solo_se_aceptan_pdf_reales` y `test_franja_horaria_incluye_los_bordes` (`@pytest.mark.parametrize`) | `it.each` en `validaciones.test.js` y `fechas.test.js` |
+| Parametrizado | `test_solo_se_aceptan_pdf_reales` y `test_franja_horaria_incluye_los_bordes` (`@pytest.mark.parametrize`) | `it.each` en `validaciones.test.js`, `fechas.test.js` y `antiguedad.test.js` |
 | Caso de error | `test_password_corta_es_rechazada_y_dice_el_minimo` (también prueba que el mensaje diga el límite) | `rechaza un mensaje que supera el largo máximo y dice el límite` |
 | Con mock | `test_reservar_turno_solapado_no_guarda_nada` | `cargarEstudios` con `vi.fn()` en `servicios.test.js` |
 
@@ -348,8 +349,8 @@ Los tests le pasan un `Mock()` como `repo`. Es un test de **mock** y no de stub 
 - **Por qué 90 y no 100:** un 100 % fijo haría que una línea defensiva imposible de alcanzar rompa el build sin que haya un riesgo real. Con 90 hay margen para ruido, pero una función nueva sin tests baja el total y frena el merge. Es un número anclado en mi medición, no una regla copiada.
 
 **Frontend: 80 % en líneas y 80 % en ramas** (`coverage.thresholds` en `vite.config.js`).
-- **Mi medición real:** la primera corrida dio 100 % de líneas y 97,56 % de ramas. Tras agregar un test quedó en **100 % de líneas y 100 % de ramas** (49 tests).
-- **Por qué 80:** deja margen de 20 puntos, así un cambio chico no rompe el build por una línea, pero una función nueva con lógica y sin tests lo hace caer.
+- **Mi medición real:** la primera corrida dio 100 % de líneas y 97,56 % de ramas. Tras agregar un test quedó en **100 % de líneas y 100 % de ramas**.
+- **Por qué 80:** deja margen de 20 puntos, así un cambio chico no rompe el build por una línea, pero una función nueva con lógica y sin tests lo hace caer. Lo comprobé en los dos PR de demostración.
 
 **Número de rama que da hoy:** 100 % en los dos lados.
 
@@ -361,6 +362,8 @@ Los tests le pasan un `Mock()` como `repo`. Es un test de **mock** y no de stub 
 - **`database.py`**: la conexión. Si está mal, la app no arranca y me entero enseguida.
 - **`__init__.py`**: vacío.
 - **Frontend:** `src/api/cliente.js` (habla con la red), `AuthContext.jsx`, `componentes/`, `paginas/`, `App.jsx` y `main.jsx`. Es interfaz y pegamento, y se verifica en el e2e del TP7. Entra a la cuenta solo lo que tiene lógica: `src/lib/**` y `src/api/servicios.js`.
+
+Con `include` (y no con `exclude`) en el front, un archivo nuevo de `src/lib` entra a la cuenta aunque nadie lo pruebe. Lo comprobé en los dos PR: `antiguedad.js` y `agenda.js` aparecieron con 0 %.
 
 **Una limitación honesta:** excluir `main.py` vale cuando ahí no queda lógica, y en mi caso quedaron dos helpers de autorización (`paciente_de` y `par_chat`) que son reglas de negocio y hoy no mide ningún test. Mi 100 % es de la lógica pura, la seguridad y los guardias, no de esa autorización. Mi próximo paso es moverlos a `logic.py` y testearlos.
 
@@ -387,10 +390,16 @@ Hice el ejercicio en los dos lados.
 - **Frontend:** `thresholds` en `vite.config.js`. Si la cobertura no llega, vitest sale con error y se repite la misma cadena con `build-frontend`.
 - No agregué ningún job ni ninguna regla de rama: el gate del TP4 ya vigilaba esos dos checks, y ahora pueden ponerse rojos por calidad y no solo por compilación.
 - La etapa de tests va **en el medio** de los Dockerfiles, y la imagen de producción no lleva pytest ni los tests adentro.
+- Los pasos que publican el reporte llevan `if: ${{ !cancelled() }}`, así que cuando los tests fallan el reporte igual se publica, que es cuando más hace falta.
 
-### Mi PR bloqueado
-- **PR 1:** <<COMPLETAR: link>>. Agregué código nuevo sin tests (<<COMPLETAR: qué función y en qué archivo>>). Compilaba bien y todos los tests existentes pasaban, pero el check `<<COMPLETAR: build-backend o build-frontend>>` se puso rojo por cobertura: <<COMPLETAR: pegá la línea del log con el número, por ejemplo "ERROR: Coverage for lines (74.13%) does not meet global threshold (80%)">>. La métrica que frenó fue <<COMPLETAR: líneas, ramas o las dos; el log lo dice>>, con vitest 5.0.5 / pytest-cov 7.1.0. Para arreglarlo escribí <<COMPLETAR: N tests, uno por cada camino del código nuevo>>. Después el check pasó a verde y mergeé.
-- **PR 2:** <<COMPLETAR: link>>. Lo dejé abierto y en rojo a propósito, con el mismo problema sin arreglar, para que se pueda comprobar el freno sin depender de mis capturas.
+### Mis dos Pull Requests
+**PR 1: #35 (mergeado).** Agregué `frontend/src/lib/antiguedad.js`, con 4 funciones y ningún test. Compilaba bien y los 49 tests existentes pasaban, pero `build-frontend` se puso rojo por cobertura. Medido en mi máquina: **líneas 57,77 % y ramas 53,94 %, contra el umbral de 80** (funciones 82,14 %, por encima). Frenó en **líneas y ramas a la vez**, con **vitest 5.0.5**: en esa versión las ramas de una función que nadie ejecuta cuentan desde el principio (en la 3 solo bajaban las líneas). La corrida roja es la del enlace de arriba. Para arreglarlo escribí `antiguedad.test.js` con 19 tests, uno por cada camino del código nuevo (los siete valores posibles de `clasificarAntiguedad` más el caso de fecha con zona, el conteo, las siete etiquetas y el filtro de estudios a revisar). Después el check pasó a verde y mergeé. La conversación del PR muestra la secuencia completa: rojo, tests que faltaban, verde, merge.
+
+**PR 2: #36 (abierto y en rojo a propósito).** Agregué `frontend/src/lib/agenda.js`, también sin tests. El log de la corrida (ver enlace) dice:
+ERROR: Coverage for lines (69.23%) does not meet global threshold (80%)
+ERROR: Coverage for branches (73.78%) does not meet global threshold (80%)
+Error: Process completed with exit code 1.
+Los 68 tests pasan y `agenda.js` figura con 0 %. Lo dejé sin arreglar para que se pueda comprobar el freno vigente sin depender de mis capturas. El botón de merge queda deshabilitado y `build-frontend` figura como Required.
 
 **Por qué compilaba, pasaba los tests y no se podía mergear:** porque los tests en verde solo dicen que lo que existe funciona, no que todo el código nuevo esté probado. Mi umbral mide cuánto de la lógica ejercitan los tests, y ese número cayó por debajo de lo que yo mismo había declarado.
 
@@ -413,11 +422,11 @@ En el backend pasaría a 100 %. Hoy lo cumplo, pero sería frágil: cualquier l�
 - **El build del front pasaba en mi máquina y falló en el CI.** Mi `.gitignore` es la plantilla de Python, que ignora cualquier carpeta `lib/`, y `frontend/src/lib/` nunca se subió al repo. El CI construye solo con lo que hay en GitHub, así que falló con `Could not resolve '../lib/validaciones.js'` y el gate frenó el merge. Lo resolví con `!frontend/src/lib/` en el `.gitignore`. Lo encontré porque el pipeline construye desde el repo y no desde mi máquina.
 - **Dos archivos de test del front quedaron como `.tests.js`.** Vitest solo detecta `.test.js`, así que al comprobar vi que solo 2 de los 4 se iban a ejecutar. Los renombré.
 - **Vitest 5 exige el paquete de cobertura de la misma versión mayor.** Instalé `@vitest/coverage-v8@5` para que coincida con `vitest@5.0.5` y verifiqué con `npm ls` que quedaran en la misma versión.
+- **Un test mío falló por una fecha mal calculada, no por el código.** En `cuenta los estudios por clase` esperaba dos estudios "nuevos", pero uno tenía 30 horas de antigüedad y el código lo clasificaba bien como "esta semana". Corregí la fecha del test. Lección: cuando un test falla, hay que leer el assert antes de tocar el código.
 - **OneDrive dejó roto mi entorno virtual.** `pip` fallaba con `OSError: [Errno 22]` porque los archivos dentro de `venv` eran marcadores de la nube y no archivos reales. Lo resolví creando un entorno nuevo fuera de OneDrive, en `C:\venvs\bioconect`.
 - **VS Code creó solo un `.venv` con Python 3.14 y lo activaba en cada terminal**, pisando el mío (3.12). Lo desactivé con `python.terminal.activateEnvironment` en `false`.
-- **OneDrive bloqueó `git checkout`** al cambiar de rama y dejó archivos borrados a medias. Con `git restore .` los recuperé y creé la rama nueva directo desde `origin/main`.
+- **OneDrive bloqueó `git checkout`** al cambiar de rama y dejó archivos borrados a medias. Con `git restore .` los recuperé y creé las ramas nuevas directo desde `origin/main`.
 - **Docker Desktop estaba pausado** y `docker build` fallaba con `docker daemon is not running`.
-- <<COMPLETAR: cualquier problema nuevo que aparezca en el CI o en los PR de demostración>>
 
 ### Uso de IA
-Usé Claude para diseñar la estructura de tests, proponer el refactor de `reservar_turno`, armar la configuración de `pytest-cov` y `vitest`, la etapa de tests de los dos Dockerfiles y los pasos del `ci.yml`, y para diagnosticar los errores de la lista anterior. Lo verifiqué corriendo los tests en mi máquina y dentro del contenedor Linux (30 casos y 100 % en el backend, 49 tests y 100 % en el front), leyendo los reportes de cobertura para elegir el ejercicio del camino sin cubrir, y comprobando que el CI se pusiera rojo cuando debía. Puedo explicar qué verifica cada assert y qué caso no está cubierto.
+Usé Claude para diseñar la estructura de tests, proponer el refactor de `reservar_turno`, armar la configuración de `pytest-cov` y `vitest`, la etapa de tests de los dos Dockerfiles y los pasos del `ci.yml`, y para diagnosticar los errores de la lista anterior. Lo verifiqué corriendo los tests en mi máquina y dentro del contenedor Linux (30 casos y 100 % en el backend, 49 tests y 100 % en el front en ese momento), leyendo los reportes de cobertura para elegir el ejercicio del camino sin cubrir, y comprobando que el CI se pusiera rojo cuando debía, dos veces. Puedo explicar qué verifica cada assert y qué caso no está cubierto.
