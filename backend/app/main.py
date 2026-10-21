@@ -11,7 +11,7 @@ from sqlmodel import Session, SQLModel, select
 
 from app.database import engine, get_session
 from app.deps import solo_bioquimico, solo_paciente, usuario_actual
-from app.logic import es_pdf, horarios_del_dia, validar_horario_turno, validar_password
+from app.logic import es_pdf, horarios_del_dia, reservar_turno, validar_password
 from app.models import ChatMensaje, Estudio, PedidoMedico, Turno, Usuario
 from app.security import create_access_token, hash_password, verify_password
 
@@ -367,6 +367,21 @@ def ocupados_de(bioquimico_id: int, session: Session) -> list[datetime]:
         )
     ).all()
 
+   class RepoTurnos:
+       """Acceso a datos de turnos: es la dependencia que reservar_turno recibe desde afuera."""
+
+       def __init__(self, session: Session):
+           self.session = session
+
+       def ocupados(self, bioquimico_id: int) -> list[datetime]:
+           return ocupados_de(bioquimico_id, self.session)
+
+       def guardar(self, paciente_id: int, bioquimico_id: int, fecha_hora: datetime) -> Turno:
+           turno = Turno(paciente_id=paciente_id, bioquimico_id=bioquimico_id, fecha_hora=fecha_hora)
+           self.session.add(turno)
+           self.session.commit()
+           self.session.refresh(turno)
+           return turno
 
 @app.get("/turnos/disponibles")
 def turnos_disponibles(
@@ -397,17 +412,11 @@ def crear_turno(
         paciente_de(u, datos.paciente_id, session)
         paciente_id, bioquimico_id = datos.paciente_id, u.id
 
-    motivo = validar_horario_turno(datos.fecha_hora)
-    if motivo:
-        raise HTTPException(status_code=400, detail=motivo)
-    if datos.fecha_hora in ocupados_de(bioquimico_id, session):
-        raise HTTPException(status_code=400, detail="El bioquímico ya tiene un turno en ese horario")
-
-    turno = Turno(paciente_id=paciente_id, bioquimico_id=bioquimico_id, fecha_hora=datos.fecha_hora)
-    session.add(turno)
-    session.commit()
-    session.refresh(turno)
-    return turno
+       try:
+           return reservar_turno(RepoTurnos(session), paciente_id, bioquimico_id, datos.fecha_hora)
+       except ValueError as error:
+           raise HTTPException(status_code=400, detail=str(error))
+   
 
 
 @app.get("/turnos")
