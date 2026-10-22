@@ -436,7 +436,7 @@ Usé Claude para diseñar la estructura de tests, proponer el refactor de `reser
 
 ### Enlaces
 - Corrida con la cadena completa y aprobación a PROD (build, tests, publicación, deploy a QA, Waiting for review, aprobación, deploy a PROD con smoke en verde): https://github.com/belmicr/bioconect/actions/runs/39724139805
-- Corrida rechazada (la compuerta diciendo "no", con motivo escrito): https://github.com/belmicr/bioconect/actions/runs/39726782694
+- Corrida rechazada (la compuerta diciendo "no", con motivo escrito): <https://github.com/belmicr/bioconect/actions/runs/39729095239>
 - PR del job de deploy a QA: https://github.com/belmicr/bioconect/pull/40
 - PR del job de deploy a PROD con aprobación y `pool_pre_ping`: https://github.com/belmicr/bioconect/pull/43
 - PR que publica las imágenes por commit y arma la plantilla de nginx: https://github.com/belmicr/bioconect/pull/39
@@ -464,7 +464,7 @@ Armé Continuous Delivery: cada cambio verificado llega solo a QA, y a PROD solo
 
 **Qué miro antes de aprobar:** que `deploy-qa` esté en verde; que en *Deploys* de Render el servicio de QA muestre como Live **el mismo commit** de la corrida (el smoke puede dar verde contra la versión anterior mientras Render construye); y que el front de QA funcione a mano: login y los datos en `app_qa`.
 
-**El rechazo:** en la corrida rechazada escribí: <<Rechazo: el smoke de QA dio verde en pocos segundos, antes de que Render terminara de construir, así que no verifica este commit. No promuevo a PROD sin confirmar en Deploys de QA que corre ‘xxxxxxx’.”: el motivo exacto que escribiste, copiado del recuadro del review>>. `deploy-prod` quedó rechazado y PROD siguió con la versión anterior.
+**El rechazo:** rechacé el deploy a PROD del commit `3910b45` con este motivo: "Rechazo: el commit 3910b45 solo cambia docs/decisiones.md y no modifica la app. Desplegarlo reiniciaría PROD sin ningún beneficio y, como el free tier de Render no tiene disco persistente, se perderían los PDF ya subidos. PROD sigue en 6026663." `deploy-prod` quedó rechazado y PROD siguió con la versión anterior. Un rechazo anterior lo había hecho con una frase de ejemplo copiada sin completar; lo reemplacé por este, con un motivo real.
 
 ### Qué prueba el smoke test, y qué no
 Reintenta hasta 30 veces cada 20 segundos (build de Render más cold start) y verifica `/health` (proceso vivo), `/health/db` (la base responde), el front servido y `/api/health` a través del front (nginx llega a la API). Cada `curl` lleva `--max-time`. **Sus límites:** `/health` devuelve `commit: dev`, así que no prueba qué versión corre (en la corrida aprobada `deploy-qa` tardó 5 segundos, menos de lo que tarda Render en construir: respondió la versión anterior); y `/health/db` ejecuta `select 1`, que funciona contra cualquier base. Las dos cosas las verifico a mano, y la primera la resuelve el TP7.
