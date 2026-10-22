@@ -435,45 +435,64 @@ Usé Claude para diseñar la estructura de tests, proponer el refactor de `reser
 ## TP6 — CD: environments, aprobaciones y deployment patterns
 
 ### Enlaces
-- PR que agrega el job de deploy a QA, con la cadena completa en verde (build, tests, publicación de imágenes y deploy a QA): https://github.com/belmicr/bioconect/pull/40
+- Corrida con la cadena completa y aprobación a PROD (build, tests, publicación, deploy a QA, Waiting for review, aprobación, deploy a PROD con smoke en verde): https://github.com/belmicr/bioconect/actions/runs/39724139805
+- Corrida rechazada (la compuerta diciendo "no", con motivo escrito): https://github.com/belmicr/bioconect/actions/runs/39726782694
+- PR del job de deploy a QA: https://github.com/belmicr/bioconect/pull/40
+- PR del job de deploy a PROD con aprobación y `pool_pre_ping`: https://github.com/belmicr/bioconect/pull/43
 - PR que publica las imágenes por commit y arma la plantilla de nginx: https://github.com/belmicr/bioconect/pull/39
 - Paquetes públicos, con etiquetas `sha-<commit>`: https://github.com/belmicr?tab=packages
-- QA, API: https://bioconect.onrender.com/health · QA, front: https://bioconect-front-qa.onrender.com
-- PROD: no completado al momento de la entrega (ver "Estado").
+- QA: front https://bioconect-front-qa.onrender.com · API https://bioconect.onrender.com/health
+- PROD: front https://bioconect-front-prod.onrender.com · API https://bioconect-api-prod.onrender.com/health
 
-### Estado
-QA completo y automático. En PROD solo llegué a crear el servicio del backend en Render, que falló al arrancar por una cadena de conexión mal armada: el front de PROD, el environment `production` con required reviewer, el flujo con aprobación, el rechazo con motivo y el rollback medido **quedaron sin hacer al momento del corte**. No los afirmo en este documento porque no los puedo mostrar. TP7, TP8 y TP9 tampoco están entregados en esta fecha.
+### Nota sobre la entrega
+Al corte del 21/10 a las 23:59 solo estaba completo QA, y así lo dejé escrito en la versión de este archivo marcada con el tag `v6.0.0`. PROD, la aprobación, el rechazo y el rollback los terminé esa misma madrugada; los documento acá para la defensa, sabiendo que no forman parte de la corrección técnica.
 
 ### Por qué la imagen se publica solo si todo está en verde
-En cada job de build, el paso que construye y publica la imagen final es el **último**. Los pasos de un job corren en orden y se cortan al primer error, así que si los tests fallan, el job muere antes y la publicación nunca corre. No hay un `if` que diga "si pasaron los tests": la condición es el orden de los pasos. Además el paso solo publica en un `push` a `main` (`github.event_name == 'push' && github.ref == 'refs/heads/main'`), así que los PR verifican pero no publican. Cada imagen se etiqueta con el commit completo (`sha-<40 caracteres>`), sin `latest`, para saber exactamente qué versión es cuál.
+En cada job de build, el paso que construye y publica la imagen final es el **último**. Los pasos de un job corren en orden y se cortan al primer error, así que si los tests fallan, el job muere antes y la publicación nunca corre. La condición no es un `if`: es el orden de los pasos. Además solo publica en un `push` a `main` (`github.event_name == 'push' && github.ref == 'refs/heads/main'`): los PR verifican pero no publican. Cada imagen se etiqueta con el commit completo (`sha-<40 caracteres>`) y sin `latest`, para saber exactamente qué versión es cuál.
 
 ### Delivery vs Deployment
-Lo que armé es Continuous Delivery: cada cambio que pasa la verificación se despliega solo a QA, y a producción debería llegar solo con una aprobación humana. Continuous Deployment sería que llegara a producción sin ninguna persona de por medio. Elegí Delivery porque BioConect maneja resultados médicos y quiero una decisión humana antes de PROD.
+Armé Continuous Delivery: cada cambio verificado llega solo a QA, y a PROD solo con una aprobación humana. Continuous Deployment sería llegar a PROD sin ninguna persona de por medio. Elegí Delivery porque BioConect maneja resultados médicos y quiero una decisión humana antes de producción.
 
 ### La cadena y los secrets
-`deploy-qa` usa `needs: [build-backend, build-frontend]` (sin verificación en verde no hay deploy) e `if: github.ref == 'refs/heads/main'` (los PR verifican, solo `main` despliega). Declara `environment: qa`, que le da acceso a los secrets de ese environment: `RENDER_HOOK_API_QA` y `RENDER_HOOK_FRONT_QA`. Son environment secrets y no secrets del repo: los ve únicamente un job que declare ese environment. El deploy lo dispara el pipeline llamando al hook con `&ref=$GITHUB_SHA`; el hook ya trae `?key=...`, por eso va `&`. Sin el `ref`, Render despliega la punta de la rama, y con dos merges seguidos la corrida del primero podría desplegar el segundo, que no pasó por nada. Con `ref` se promueve lo mismo que se verificó. En Render el Auto-Deploy está desactivado para que ningún deploy ocurra por fuera del pipeline.
+- `deploy-qa`: `needs: [build-backend, build-frontend]` (sin verificación en verde no hay deploy), `if: github.ref == 'refs/heads/main'` (solo `main` despliega) y `environment: qa`.
+- `deploy-prod`: `needs: deploy-qa` (sin QA en verde ni siquiera se pide aprobación) y `environment: production`. No repite el `if` de la rama porque depende de `deploy-qa`, que lo tiene.
+- Cada environment tiene sus hooks como **environment secrets** (`RENDER_HOOK_API_QA`, `RENDER_HOOK_FRONT_QA`, `RENDER_HOOK_API_PROD`, `RENDER_HOOK_FRONT_PROD`). Un secret de `production` solo lo puede leer un job que declare ese environment, y ese job no arranca hasta que alguien aprueba: quien no puede aprobar tampoco puede leer las llaves de PROD.
+- El deploy se dispara llamando al hook con `&ref=$GITHUB_SHA`. Sin el `ref`, Render despliega la punta de la rama, y con dos merges seguidos una corrida podría desplegar un commit que no pasó por nada. Con `ref` se promueve lo mismo que se verificó, y PROD recibe el mismo commit que pasó por QA (lo comprobé en *Deploys* de Render: `6026663` en QA y en PROD).
 
-### Qué prueba el smoke test
-Reintenta hasta 30 veces cada 20 segundos, porque el plan gratuito incluye el build de Render y un cold start. Verifica cuatro cosas: `/health` (el proceso está vivo), `/health/db` (la base responde), el front servido, y `/api/health` a través del front (nginx llega a la API). Cada `curl` lleva `--max-time`, porque un servicio que se despierta acepta la conexión y no contesta. **Su límite**: `/health/db` ejecuta `select 1`, que funciona contra cualquier base, así que el smoke no distingue a qué base está conectado el servicio (ver el problema de abajo).
+### El gate humano
+`production` tiene **Required reviewers** con mi usuario. Desactivé "Allow administrators to bypass configured protection rules": como soy administradora, con esa opción podría saltear la aprobación y la compuerta sería decorativa. GitHub sí permite aprobar los propios deployments (a diferencia de los PR), por eso el flujo funciona trabajando sola.
+
+**Qué miro antes de aprobar:** que `deploy-qa` esté en verde; que en *Deploys* de Render el servicio de QA muestre como Live **el mismo commit** de la corrida (el smoke puede dar verde contra la versión anterior mientras Render construye); y que el front de QA funcione a mano: login y los datos en `app_qa`.
+
+**El rechazo:** en la corrida rechazada escribí: <<Rechazo: el smoke de QA dio verde en pocos segundos, antes de que Render terminara de construir, así que no verifica este commit. No promuevo a PROD sin confirmar en Deploys de QA que corre ‘xxxxxxx’.”: el motivo exacto que escribiste, copiado del recuadro del review>>. `deploy-prod` quedó rechazado y PROD siguió con la versión anterior.
+
+### Qué prueba el smoke test, y qué no
+Reintenta hasta 30 veces cada 20 segundos (build de Render más cold start) y verifica `/health` (proceso vivo), `/health/db` (la base responde), el front servido y `/api/health` a través del front (nginx llega a la API). Cada `curl` lleva `--max-time`. **Sus límites:** `/health` devuelve `commit: dev`, así que no prueba qué versión corre (en la corrida aprobada `deploy-qa` tardó 5 segundos, menos de lo que tarda Render en construir: respondió la versión anterior); y `/health/db` ejecuta `select 1`, que funciona contra cualquier base. Las dos cosas las verifico a mano, y la primera la resuelve el TP7.
 
 ### Qué se pierde porque Render reconstruye
-En este TP Render vuelve a construir el commit desde el repositorio, así que lo que corre en QA es otra construcción del mismo commit, no la imagen que mis tests verificaron. Una dependencia o una imagen base que cambien entre los dos builds podrían dar un resultado distinto. Esa garantía la recupera el TP7. Además mi `/health` devuelve `commit: dev`, así que el smoke puede dar verde contra la versión vieja mientras Render construye. Lo verifiqué a mano: en Render, *Deploys* mostró para el servicio el commit `a0087c2` con trigger Deploy Hook, el mismo de la corrida verde.
+Render vuelve a construir el commit desde el repositorio, así que lo que corre es otra construcción del mismo commit y no la imagen que mis tests verificaron. Una dependencia o una imagen base que cambien entre los dos builds podrían dar un resultado distinto. Eso lo resuelve el TP7, con el entorno ejecutando la imagen publicada.
+
+### Patrón de deploy que usaría en serio, y mi rollback
+Hoy es un reemplazo directo: Render reemplaza el contenedor y, si falla, sigue sirviendo la versión anterior. Para una app de resultados médicos en serio usaría **blue-green**: la versión nueva arriba al lado de la vieja, se prueba contra la base real y el tráfico se cambia de golpe, con la vieja lista para volver en segundos. Canary sirve cuando hay muchos usuarios para repartir el riesgo; con un laboratorio chico, blue-green es más simple y suficiente.
+
+**Rollback medido:** en `bioconect-api-prod`, *Deploys* → **Rollback** al deploy anterior (`643628e`). Render informó 20,6 s de deploy y mi cronómetro dio **31 segundos** desde el click hasta que `/health/db` respondió `{"db":"ok"}`. Es rápido porque Render no reconstruye: reusa la imagen ya armada. Después volví a `6026663` de la misma forma, también en unos 20 s. Limitación: el rollback vuelve el código, no la base; un cambio de esquema necesitaría su propia vuelta atrás.
 
 ### El free tier
-Los servicios gratuitos de Render se apagan tras 15 minutos sin tráfico y la primera visita tarda hasta 50 segundos (cold start). No tienen disco persistente: los PDF que se suben se pierden en cada reinicio o deploy. Es una limitación real para una app de resultados médicos y queda anotada para una etapa de producción real (almacenamiento externo). Usé Neon en lugar del Postgres de Render porque el gratuito de Render expira a los 30 días.
+Los servicios gratuitos se apagan tras 15 minutos sin tráfico y la primera visita tarda hasta 50 s. No tienen disco persistente: **los PDF subidos se pierden en cada reinicio o deploy**, una limitación real para esta app que queda anotada (almacenamiento externo). Usé Neon porque el Postgres gratuito de Render expira a los 30 días. Los seis servicios comparten las 750 horas mensuales del workspace.
 
 ### Dos entornos, dos bases
-Neon tiene `app_qa` y `app_prod` en el mismo servidor. Mi intención es que cada entorno use la suya. **Al momento de la entrega encontré que el servicio de QA estaba escribiendo en `app_prod`**: registré un usuario desde QA y al consultar el SQL Editor de Neon apareció en `app_prod`, mientras que `app_qa` no tenía ninguna tabla de la app. La causa es que la `DATABASE_URL` cargada en el servicio de QA apuntaba a `app_prod`: las dos cadenas difieren en una sola palabra y se copiaron mal. Es el error silencioso: nada se puso rojo, el smoke test dio verde y `/health/db` también, porque `select 1` funciona contra cualquier base. Lo descubrí al no conformarme con ese chequeo y mirar las tablas en Neon. **Queda pendiente corregir la cadena de QA a `app_qa` y limpiar el dato de prueba de `app_prod`.** El front toma la dirección de su API de variables de entorno (`BACKEND_URL`, `DNS_RESOLVER`) mediante una plantilla de nginx (`default.conf.template`): la misma imagen del front puede servir en QA y en PROD, cada una hablando con su API.
+Neon tiene `app_qa` y `app_prod`. **Lo comprobé con datos:** registré `qa-prueba@qa.com` desde QA y `prod-prueba@prod.com` desde PROD, y en el SQL Editor de Neon cada uno aparece solo en su base. El front toma la dirección de su API de variables (`BACKEND_URL`, `DNS_RESOLVER`) mediante una plantilla de nginx: la misma imagen sirve en QA y en PROD, cada una con su API.
 
 ### Problemas encontrados
-- **QA escribía en la base de PROD sin que nada fallara.** Ver "Dos entornos, dos bases". Es el problema más importante de este TP: la separación de entornos estaba rota y todos los chequeos automáticos daban verde.
-- **El CI quedó en verde con un `main.py` roto.** El refactor de TP5 dejó un `IndentationError` en `main.py`, y ningún test lo detectó porque los tests no importan `main.py` y la cobertura lo excluye. Lo atrapó el primer deploy real en Render ("Exited with status 1"). Desde entonces corro `python -m py_compile app/main.py` antes de subir.
-- **Neon cierra las conexiones inactivas.** La primera consulta después de un rato fallaba con `psycopg2.OperationalError: SSL connection has been closed unexpectedly` y la API devolvía 500, visible en los logs de Render. La solución es `pool_pre_ping=True` y `pool_recycle=300` en el motor de SQLAlchemy. Queda pendiente de corrección en `database.py`.
-- `denied: permission_denied: write_package` al publicar: los paquetes de ghcr.io los había creado en el TP2 con un token personal y no estaban vinculados al repo. Los vinculé en *Package settings → Manage Actions access* con rol Write.
-- `curl: (3) URL rejected` en `deploy-qa`: el secreto del hook del backend se guardó con formato inválido. Lo volví a copiar con el botón de copiar y relancé la corrida.
-- El backend de PROD falló al arrancar con `Could not parse SQLAlchemy URL`: la cadena de Neon de PROD quedó mal armada al copiarla.
+- **QA escribía en la base de PROD sin que nada fallara.** La cadena "de QA" se copió con el selector de Neon en `app_prod`. Todo daba verde, incluidos el smoke y `/health/db`. Lo descubrí mirando las tablas en Neon: el usuario de QA estaba en `app_prod` y `app_qa` estaba vacía. Corregí la cadena y repetí la prueba con un usuario en cada base.
+- **El Auto-Deploy de Render estaba prendido en PROD** al crear el servicio: dos deploys aparecen con trigger *Auto-Deploy*, uno de ellos 20 minutos antes de mi aprobación. Mientras estuvo prendido, la aprobación no protegía nada. Render lo apagó al recibir el primer deploy por hook con un commit fijo, y lo verifiqué en Off en los cuatro servicios.
+- **Un hook cargado como variable y no como secret:** `RENDER_HOOK_FRONT_PROD` quedó en *Environment variables*, así que el job lo leía vacío (`curl: (3) URL rejected`) y además se veía en texto claro. Lo pasé a *Environment secrets*.
+- **El CI quedó en verde con un `main.py` roto** (un `IndentationError` del refactor de TP5): los tests no importan `main.py`. Lo atrapó el primer deploy real. Desde entonces corro `python -m py_compile app/main.py` antes de subir.
+- **Neon cierra las conexiones inactivas:** la primera consulta después de un rato fallaba con `SSL connection has been closed unexpectedly`. Lo resolví con `pool_pre_ping=True` y `pool_recycle=300` (PR #43).
+- **Un deploy colgado 15 minutos** ("Port scan timeout reached"): el backend se conecta a la base al arrancar, antes de abrir el puerto, y con una cadena inválida quedaba esperando. Agregué `connect_timeout=10` a la cadena para que falle rápido y muestre el error.
+- `denied: permission_denied: write_package`: los paquetes de ghcr.io eran del TP2, creados con un token personal. Los vinculé al repo con rol Write.
+- `Could not parse SQLAlchemy URL` en PROD por una cadena mal armada al copiarla.
 - La consola de Neon se rompía con la traducción automática del navegador.
-- El front no puede arrancar en Render con la dirección del backend escrita en `nginx.conf` (el nombre `backend` solo existe en compose): lo resolví con la plantilla.
 
 ### Uso de IA
-Usé Claude para armar el job `deploy-qa`, la plantilla de nginx y la publicación de imágenes, y para diagnosticar los errores de la lista. Lo verifiqué mirando en Render qué commit desplegó cada servicio, probando `/health` y el login en el front de QA, consultando las tablas en Neon y leyendo los logs de cada fallo. Puedo explicar por qué cada paso de la cadena está donde está.
+Usé Claude para armar los jobs de deploy, la plantilla de nginx y la publicación de imágenes, y para diagnosticar los errores de la lista. Lo verifiqué en Render (qué commit tiene cada servicio, Auto-Deploy en Off), en Neon (qué datos hay en cada base), probando el login en QA y PROD, midiendo el rollback con cronómetro y leyendo los logs de cada fallo.
