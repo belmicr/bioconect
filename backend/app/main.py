@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlmodel import Session, SQLModel, select
 
 from app.database import engine, get_session
@@ -31,8 +32,15 @@ def on_startup():
 
 @app.get("/health")
 def health():
-    # "commit" lo va a usar el pipeline (TP6/TP7) para saber qué versión corre
+    # "commit" lo va a usar el pipeline para saber qué versión corre
     return {"status": "ok", "commit": os.environ.get("GIT_SHA", "dev")}
+
+
+@app.get("/health/db")
+def health_db(session: Session = Depends(get_session)):
+    # A diferencia de /health, este endpoint toca la base: si la conexión está rota, falla.
+    session.execute(text("select 1"))
+    return {"db": "ok"}
 
 
 # ---------- Helpers ----------
@@ -367,21 +375,23 @@ def ocupados_de(bioquimico_id: int, session: Session) -> list[datetime]:
         )
     ).all()
 
-   class RepoTurnos:
-       """Acceso a datos de turnos: es la dependencia que reservar_turno recibe desde afuera."""
 
-       def __init__(self, session: Session):
-           self.session = session
+class RepoTurnos:
+    """Acceso a datos de turnos: es la dependencia que reservar_turno recibe desde afuera."""
 
-       def ocupados(self, bioquimico_id: int) -> list[datetime]:
-           return ocupados_de(bioquimico_id, self.session)
+    def __init__(self, session: Session):
+        self.session = session
 
-       def guardar(self, paciente_id: int, bioquimico_id: int, fecha_hora: datetime) -> Turno:
-           turno = Turno(paciente_id=paciente_id, bioquimico_id=bioquimico_id, fecha_hora=fecha_hora)
-           self.session.add(turno)
-           self.session.commit()
-           self.session.refresh(turno)
-           return turno
+    def ocupados(self, bioquimico_id: int) -> list[datetime]:
+        return ocupados_de(bioquimico_id, self.session)
+
+    def guardar(self, paciente_id: int, bioquimico_id: int, fecha_hora: datetime) -> Turno:
+        turno = Turno(paciente_id=paciente_id, bioquimico_id=bioquimico_id, fecha_hora=fecha_hora)
+        self.session.add(turno)
+        self.session.commit()
+        self.session.refresh(turno)
+        return turno
+
 
 @app.get("/turnos/disponibles")
 def turnos_disponibles(
@@ -412,11 +422,10 @@ def crear_turno(
         paciente_de(u, datos.paciente_id, session)
         paciente_id, bioquimico_id = datos.paciente_id, u.id
 
-       try:
-           return reservar_turno(RepoTurnos(session), paciente_id, bioquimico_id, datos.fecha_hora)
-       except ValueError as error:
-           raise HTTPException(status_code=400, detail=str(error))
-   
+    try:
+        return reservar_turno(RepoTurnos(session), paciente_id, bioquimico_id, datos.fecha_hora)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 @app.get("/turnos")

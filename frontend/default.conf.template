@@ -1,0 +1,22 @@
+server {
+    listen 80;
+    client_max_body_size 12m;
+
+    location / {
+        root /usr/share/nginx/html;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # La dirección del backend y el DNS llegan por variables de entorno:
+    # en compose, el nombre del servicio; en Render, la URL de la api de ESE entorno.
+    resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+    set $backend_api ${BACKEND_URL};
+
+    location /api/ {
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass $backend_api;
+        proxy_ssl_server_name on;
+        proxy_set_header Host $proxy_host;
+    }
+}
