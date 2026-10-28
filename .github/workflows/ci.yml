@@ -51,7 +51,7 @@ jobs:
           EOF
 
       - name: Publicar coverage del backend
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: coverage-backend
@@ -115,7 +115,7 @@ jobs:
           EOF
 
       - name: Publicar coverage del frontend
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: coverage-frontend
