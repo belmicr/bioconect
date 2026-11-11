@@ -4,6 +4,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
+import sentry_sdk
+
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -16,6 +18,14 @@ from app.logic import es_pdf, horarios_del_dia, reservar_turno, validar_password
 from app.models import ChatMensaje, Estudio, PedidoMedico, Turno, Usuario
 from app.security import create_access_token, hash_password, verify_password
 
+# Sentry: solo se prende si el entorno trae SENTRY_DSN (hoy, solo PROD).
+# Sin la variable (QA, mi máquina, los tests), la app anda igual y no manda nada.
+if os.environ.get("SENTRY_DSN"):
+    sentry_sdk.init(
+        dsn=os.environ["SENTRY_DSN"],
+        traces_sample_rate=1.0,  # medir todos los pedidos: tiempos y uso
+        environment=os.environ.get("APP_ENV", "production"),
+    )
 app = FastAPI(title="BioConect API")
 
 UPLOADS = Path(os.environ.get("UPLOAD_DIR", "uploads"))
@@ -30,7 +40,7 @@ def on_startup():
     SQLModel.metadata.create_all(engine)
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     # "commit" lo va a usar el pipeline para saber qué versión corre
     return {"status": "ok", "commit": os.environ.get("GIT_SHA", "dev")}
@@ -42,7 +52,10 @@ def health_db(session: Session = Depends(get_session)):
     session.execute(text("select 1"))
     return {"db": "ok"}
 
-
+# TEMPORAL (TP9): un error a propósito para verlo llegar a Sentry. Sacarlo al terminar.
+@app.get("/falla")
+def falla():
+    raise RuntimeError("Falla de prueba del TP9")
 # ---------- Helpers ----------
 
 def publico(u: Usuario) -> dict:
