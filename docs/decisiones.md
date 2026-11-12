@@ -444,8 +444,7 @@ Usé Claude para diseñar la estructura de tests, proponer el refactor de `reser
 - QA: front https://bioconect-front-qa.onrender.com · API https://bioconect.onrender.com/health
 - PROD: front https://bioconect-front-prod.onrender.com · API https://bioconect-api-prod.onrender.com/health
 
-### Nota sobre la entrega
-Al corte del 21/10 a las 23:59 solo estaba completo QA, y así lo dejé escrito en la versión de este archivo marcada con el tag `v6.0.0`. PROD, la aprobación, el rechazo y el rollback los terminé esa misma madrugada; los documento acá para la defensa, sabiendo que no forman parte de la corrección técnica.
+
 
 ### Por qué la imagen se publica solo si todo está en verde
 En cada job de build, el paso que construye y publica la imagen final es el **último**. Los pasos de un job corren en orden y se cortan al primer error, así que si los tests fallan, el job muere antes y la publicación nunca corre. La condición no es un `if`: es el orden de los pasos. Además solo publica en un `push` a `main` (`github.event_name == 'push' && github.ref == 'refs/heads/main'`): los PR verifican pero no publican. Cada imagen se etiqueta con el commit completo (`sha-<40 caracteres>`) y sin `latest`, para saber exactamente qué versión es cuál.
