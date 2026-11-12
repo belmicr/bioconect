@@ -21,3 +21,6 @@ COPY --from=build /root/.local /root/.local
 COPY app ./app
 EXPOSE 8000
 ENTRYPOINT ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# El pipeline le pasa el commit al construir; /health lo devuelve.
+ARG GIT_SHA=dev
+ENV GIT_SHA=$GIT_SHA

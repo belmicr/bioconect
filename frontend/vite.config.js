@@ -14,7 +14,9 @@ export default defineConfig({
     },
   },
   test: {
+    exclude: ['e2e/**', 'node_modules/**'],
     coverage: {
+      
       provider: 'v8',
       reporter: ['text', 'html', 'lcov', 'json-summary'],
       // Solo la lógica propia entra en la cuenta. Queda afuera el cliente HTTP, el contexto
