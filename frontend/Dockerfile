@@ -17,3 +17,7 @@ COPY --from=build /app/dist /usr/share/nginx/html
 ENV BACKEND_URL=http://backend:8000 \
     DNS_RESOLVER=127.0.0.11
 EXPOSE 80
+
+# El pipeline le pasa el commit; queda publicado en /version.txt.
+ARG GIT_SHA=dev
+RUN echo "$GIT_SHA" > /usr/share/nginx/html/version.txt

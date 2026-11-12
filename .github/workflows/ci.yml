@@ -71,6 +71,7 @@ jobs:
           context: ./backend
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ghcr.io/${{ github.repository }}-backend:sha-${{ github.sha }}
+          build-args: GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
@@ -135,6 +136,7 @@ jobs:
           context: ./frontend
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ghcr.io/${{ github.repository }}-frontend:sha-${{ github.sha }}
+          build-args: GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
@@ -145,67 +147,126 @@ jobs:
     environment: qa
     timeout-minutes: 15
     steps:
-      # El &ref= es el corazón del práctico: sin él, Render despliega la punta de la rama
-      # y no el commit que acabamos de verificar. El hook ya trae ?key=..., por eso va &.
-      - name: Disparar el deploy en Render (backend y front) del commit verificado
+      # TP7: Render ya no construye. Se le dice QUÉ IMAGEN ejecutar: la que este pipeline verificó y publicó.
+      - name: Disparar el deploy en Render con la imagen sha-<commit>
         env:
           HOOK_API: ${{ secrets.RENDER_HOOK_API_QA }}
           HOOK_FRONT: ${{ secrets.RENDER_HOOK_FRONT_QA }}
+          IMG_API: ghcr.io/${{ github.repository }}-backend:sha-${{ github.sha }}
+          IMG_FRONT: ghcr.io/${{ github.repository }}-frontend:sha-${{ github.sha }}
         run: |
-          curl -fsS --max-time 30 "$HOOK_API&ref=$GITHUB_SHA"
-          curl -fsS --max-time 30 "$HOOK_FRONT&ref=$GITHUB_SHA"
+          curl -fsS --max-time 30 --get --data-urlencode "imgURL=$IMG_API" "$HOOK_API"
+          curl -fsS --max-time 30 --get --data-urlencode "imgURL=$IMG_FRONT" "$HOOK_FRONT"
 
-      - name: Smoke test (espera a que QA conteste)
+      - name: Smoke test (espera a que QA corra ESTE commit)
         shell: bash
         env:
           URL_API: https://bioconect.onrender.com
           URL_FRONT: https://bioconect-front-qa.onrender.com
         run: |
-          echo "Esperando a que QA esté vivo..."
+          echo "Esperando a que QA corra $GITHUB_SHA..."
           for i in $(seq 1 30); do
-            if curl -fsS --max-time 10 "$URL_API/health" \
-               && curl -fsS --max-time 10 "$URL_API/health/db" \
-               && curl -fsS --max-time 10 "$URL_FRONT/" > /dev/null \
+            if curl -fsS --max-time 10 "$URL_API/health" | grep -q "$GITHUB_SHA" \
+               && curl -fsS --max-time 10 "$URL_API/health/db" > /dev/null \
+               && curl -fsS --max-time 10 "$URL_FRONT/version.txt" | grep -q "$GITHUB_SHA" \
                && curl -fsS --max-time 10 "$URL_FRONT/api/health" > /dev/null; then
-              echo "✅ QA responde (API, base y front, y el front llega a la API)"
+              echo "✅ QA corre $GITHUB_SHA (API, base y front)"
               exit 0
             fi
             sleep 20
           done
-          echo "❌ QA no respondió a tiempo"
+          echo "❌ QA no llegó a correr este commit a tiempo"
           exit 1
+
+  integracion:
+    runs-on: ubuntu-latest
+    needs: deploy-qa
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Instalar dependencias
+        run: npm ci
+        working-directory: ./frontend
+      - name: Integración contra la API de QA (base real, sin navegador)
+        env:
+          API_BASE_URL: https://bioconect.onrender.com
+        run: npx playwright test e2e/api.spec.js
+        working-directory: ./frontend
+      - name: Publicar reporte de integración
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-integracion
+          path: frontend/playwright-report
+          retention-days: 7
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: integracion              # si la API está rota, no gastamos un navegador en confirmarlo
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Instalar dependencias y el navegador
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+        working-directory: ./frontend
+      - name: e2e contra el front de QA (navegador real)
+        env:
+          E2E_BASE_URL: https://bioconect-front-qa.onrender.com
+          API_BASE_URL: https://bioconect.onrender.com
+        run: npx playwright test e2e/login.spec.js
+        working-directory: ./frontend
+      - name: Publicar reporte e2e
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-e2e
+          path: frontend/playwright-report
+          retention-days: 7
 
   deploy-prod:
     runs-on: ubuntu-latest
-    needs: deploy-qa                # sin QA verde, ni siquiera se pide aprobación
-    environment: production         # la pausa: no arranca hasta que el reviewer aprueba
+    needs: e2e                      # EL gate: sin e2e verde, ni siquiera se pide aprobación
+    environment: production
     timeout-minutes: 15
     steps:
-      # No repite el if de la rama: depende de deploy-qa, que sí lo tiene.
-      - name: Disparar el deploy en Render (backend y front) del mismo commit que pasó por QA
+      - name: Disparar el deploy en Render con LA MISMA imagen que pasó por QA
         env:
           HOOK_API: ${{ secrets.RENDER_HOOK_API_PROD }}
           HOOK_FRONT: ${{ secrets.RENDER_HOOK_FRONT_PROD }}
+          IMG_API: ghcr.io/${{ github.repository }}-backend:sha-${{ github.sha }}
+          IMG_FRONT: ghcr.io/${{ github.repository }}-frontend:sha-${{ github.sha }}
         run: |
-          curl -fsS --max-time 30 "$HOOK_API&ref=$GITHUB_SHA"
-          curl -fsS --max-time 30 "$HOOK_FRONT&ref=$GITHUB_SHA"
+          curl -fsS --max-time 30 --get --data-urlencode "imgURL=$IMG_API" "$HOOK_API"
+          curl -fsS --max-time 30 --get --data-urlencode "imgURL=$IMG_FRONT" "$HOOK_FRONT"
 
-      - name: Smoke test (espera a que PROD conteste)
+      - name: Smoke test (espera a que PROD corra ESTE commit)
         shell: bash
         env:
           URL_API: https://bioconect-api-prod.onrender.com
           URL_FRONT: https://bioconect-front-prod.onrender.com
         run: |
-          echo "Esperando a que PROD esté vivo..."
+          echo "Esperando a que PROD corra $GITHUB_SHA..."
           for i in $(seq 1 30); do
-            if curl -fsS --max-time 10 "$URL_API/health" \
-               && curl -fsS --max-time 10 "$URL_API/health/db" \
-               && curl -fsS --max-time 10 "$URL_FRONT/" > /dev/null \
+            if curl -fsS --max-time 10 "$URL_API/health" | grep -q "$GITHUB_SHA" \
+               && curl -fsS --max-time 10 "$URL_API/health/db" > /dev/null \
+               && curl -fsS --max-time 10 "$URL_FRONT/version.txt" | grep -q "$GITHUB_SHA" \
                && curl -fsS --max-time 10 "$URL_FRONT/api/health" > /dev/null; then
-              echo "✅ PROD responde (API, base y front, y el front llega a la API)"
+              echo "✅ PROD corre $GITHUB_SHA (API, base y front)"
               exit 0
             fi
             sleep 20
           done
-          echo "❌ PROD no respondió a tiempo"
+          echo "❌ PROD no llegó a correr este commit a tiempo"
           exit 1

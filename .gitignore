@@ -238,3 +238,6 @@ backend/*test*.json
 coverage/
 frontend-coverage/
 backend-results/
+# Reportes de Playwright
+frontend/playwright-report/
+frontend/test-results/
