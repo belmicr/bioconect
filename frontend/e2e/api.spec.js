@@ -26,3 +26,9 @@ test('se puede crear un usuario y entrar con él (escribe y lee la base)', async
   })
   expect((await yo.json()).email).toBe(email)
 })
+
+test('sin token, la API no entrega estudios (401)', async ({ request }) => {
+  const respuesta = await request.get(`${API}/estudios`)
+
+  expect(respuesta.status()).toBe(401)
+})
