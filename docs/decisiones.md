@@ -497,6 +497,62 @@ Neon tiene `app_qa` y `app_prod`. **Lo comprobé con datos:** registré `qa-prue
 Usé Claude para armar los jobs de deploy, la plantilla de nginx y la publicación de imágenes, y para diagnosticar los errores de la lista. Lo verifiqué en Render (qué commit tiene cada servicio, Auto-Deploy en Off), en Neon (qué datos hay en cada base), probando el login en QA y PROD, midiendo el rollback con cronómetro y leyendo los logs de cada fallo.
 
 
+## Enlaces del TP7
+- **Paquetes públicos** (etiquetas `sha-<commit>`, sin `latest`): https://github.com/users/belmicr/packages/container/package/bioconect-backend · https://github.com/users/belmicr/packages/container/package/bioconect-frontend
+- **Corrida con la integración en VERDE y la e2e en ROJO** frenando la promoción (`deploy-prod` no arrancó): https://github.com/belmicr/bioconect/actions/runs/43134390954 — sus dos reportes están en *Artifacts*: `playwright-report-integracion` (verde) y `playwright-report-e2e` (rojo, con captura y traza del fallo).
+- **Commit que rompió la app:** https://github.com/belmicr/bioconect/commit/5e8f502 (cambia el texto del botón de login de "Ingresar" a "Entrar"; no toca `e2e/`).
+- **Corrida completa en verde posterior, hasta PROD con aprobación:** https://github.com/belmicr/bioconect/actions/runs/43136246073
+- **QA:** https://bioconect-front-qa.onrender.com (API https://bioconect.onrender.com/health) · **PROD:** https://bioconect-front-prod.onrender.com (API https://bioconect-api-prod.onrender.com/health)
+
+
+## TP7 — Contenedores en el pipeline + integración y e2e
+
+### Build once, deploy many
+En el TP6, Render **reconstruía** cada commit desde el repositorio: lo que corría en QA y en PROD eran dos construcciones distintas del mismo código, y ninguna era la imagen que mis tests habían verificado. Mis dependencias de Python están fijadas, pero la imagen base `python:3.12-slim` o `nginx:1.27-alpine` puede cambiar entre un build y otro, y eso habría dado un PROD distinto de QA con "el mismo commit". Ahora la imagen se construye **una sola vez** en el pipeline, se testea, se publica con su etiqueta, y QA y PROD ejecutan **exactamente esa** imagen: Render ya no construye nada.
+
+### Mis etiquetas
+- **`sha-<commit>`** (en ghcr.io): es la identidad inmutable de la imagen; dice de qué commit salió y no se mueve. Es lo que el pipeline le pasa a Render en cada deploy (`imgURL`).
+- **`v7.0.0`** (en git): le pone nombre a la release; apunta al commit que está en PROD.
+- **Sin `latest`:** `latest` no dice qué hay adentro; un deploy que lo nombrara ejecutaría "lo último que se publicó", haya pasado las pruebas o no.
+- Los cuatro servicios de Render los cambié de fuente (no los recreé, así conservé URL y deploy hook) y los configuré con la imagen `sha-8787c17ee9bcdd0bb257b19a5e1a214c8195bcad`. **Esa no es la que corre:** cada deploy del pipeline le pasa a Render la imagen `sha-<commit>` de su propia corrida.
+
+### Del tag a la imagen, en un paso
+`git rev-list -n1 v7.0.0` me da el commit, y la imagen es `ghcr.io/belmicr/bioconect-backend:sha-<ese commit>` (y lo mismo con `-frontend`).
+
+### Cómo se comprueba desde afuera que el entorno ejecuta mi imagen
+- En los *Events* de cada servicio de Render, el deploy dice "Triggered via Deploy Hook" y nombra la imagen `sha-<commit>` (lo muestro en vivo en la defensa).
+- El pipeline le pasa el commit a la imagen al construirla (`GIT_SHA`): el `/health` de la API lo devuelve, y el front lo publica en `/version.txt`. El smoke espera a que **los dos** respondan el commit de la corrida.
+- Cualquiera puede bajar la imagen por su etiqueta, sin credenciales: `docker pull ghcr.io/belmicr/bioconect-backend:sha-<commit>`.
+- **Lo que el smoke no prueba:** que la app funcione. Solo pregunta si responde y qué versión es. Que un usuario pueda entrar lo prueba la e2e.
+
+### Qué pruebo en cada suite, y por qué no es lo mismo
+- **Integración** (Playwright `request`, sin navegador, contra la API de QA con su base Neon real): (1) `/health/db` responde; (2) se crea un usuario, se loguea y `/me` devuelve su email: escribe y lee la base de verdad; (3) **elegida por mí:** sin token, `/estudios` da 401. La elegí porque BioConect maneja resultados médicos y el bug más caro es que alguien vea estudios sin estar autenticado.
+- **e2e** (Playwright con Chromium, contra el front de QA): (1) una bioquímica entra y ve su portal; (2) con la contraseña equivocada aparece el error y no entra; (3) **elegida por mí:** al cerrar sesión vuelve al login, porque en una computadora compartida de laboratorio quedarse con la sesión abierta expone datos de pacientes.
+- **Qué dejé afuera (pirámide):** las reglas de negocio (horarios de turnos, PDF válido, contraseñas) ya las cubren los tests unitarios del TP5, que son rápidos y baratos; repetirlas en e2e sería lento y frágil. La integración no mira la pantalla, y la e2e no prueba cada endpoint.
+- **Si se rompen:** la cadena queda en rojo, `deploy-prod` no arranca y GitHub me avisa por mail.
+
+### El par verde/rojo de mi rotura
+Cambié el texto del botón de login de "Ingresar" a "Entrar". Compilaba y pasaban los 68 tests unitarios. En la corrida, **la integración quedó verde** (la API y la base estaban bien) y **la e2e quedó roja** (un usuario no encontraba el botón): el diagnóstico es que el problema está en el front, no en el back. `deploy-prod` ni siquiera pidió aprobación.
+
+### Integración amplia, no estrecha
+Mi integración corre contra la API **ya desplegada** en QA, con su base real. Gana: prueba la configuración verdadera (variables de entorno, Neon, la red de Render), que es donde falló más de una vez en el TP6. Pierde: es más lenta, depende de que QA esté arriba y sufre el cold start, y deja datos en la base de QA (por eso cada corrida usa un email único con la hora).
+
+### Cold start y tests flaky
+El free tier tarda en despertar: cada prueba tiene hasta 120 s, cada `expect` hasta 30 s, y Playwright reintenta una vez. Además el smoke espera hasta 30 × 20 s a que QA corra el commit nuevo antes de que empiecen las pruebas. Un test **flaky** es uno que a veces pasa y a veces falla sin que cambie el código; el reintento lo tapa, así que si una prueba pasa solo al reintentar, lo trato como un problema a mirar y no como un verde.
+
+### La misma imagen del front en QA y en PROD
+Adentro de la imagen quedan los archivos estáticos ya construidos y el commit (`/version.txt`). Afuera, por variable de entorno de cada servicio, quedan la dirección de la API (`BACKEND_URL`) y el DNS (`DNS_RESOLVER`), que nginx lee al arrancar desde la plantilla `default.conf.template` del TP6. Por eso la imagen `sha-<commit>` del front es la misma en los dos entornos y cada una habla con su API.
+
+### Problemas encontrados
+- **En el TP6 el smoke daba verde contra la versión vieja**, porque Render seguía sirviéndola mientras construía. Lo resolví haciendo que la imagen lleve el commit y que el smoke espere a ver ese commit en la API y en el front.
+- **Vitest tomaba los archivos de Playwright** (`e2e/*.spec.js`) como propios. Los excluí en `vite.config.js`.
+- **Cambiar la fuente de los servicios en Render:** se hace en *Settings → Build → Source → Edit → Existing Image*, sin recrear el servicio, para conservar URL y deploy hook.
+
+### Uso de IA
+Usé Claude para el cambio del pipeline (imágenes con `imgURL`, smoke con el commit, jobs de integración y e2e) y para escribir las pruebas. Lo verifiqué corriendo las 6 pruebas contra QA desde mi máquina, viendo la e2e en rojo frenar la promoción con la integración en verde, y comprobando en Render que cada servicio ejecuta la imagen de su corrida.
+
+
+
 ## TP9 — DevSecOps + observabilidad
 Más usada: GET /estudios (la de más pedidos entre las operaciones reales).
 Más lenta: POST /login, p95 1,86 s.
