@@ -18,7 +18,7 @@ jobs:
           RAMA: ${{ github.head_ref || github.ref_name }}
         run: echo "Rama $RAMA · commit $GITHUB_SHA"
       - name: Bajar el código al runner
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Preparar el constructor que sabe cachear
         uses: docker/setup-buildx-action@v4
 
@@ -82,7 +82,7 @@ jobs:
       packages: write
     steps:
       - name: Bajar el código al runner
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Preparar el constructor que sabe cachear
         uses: docker/setup-buildx-action@v4
 
@@ -183,7 +183,7 @@ jobs:
     needs: deploy-qa
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -210,7 +210,7 @@ jobs:
     needs: integracion              # si la API está rota, no gastamos un navegador en confirmarlo
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
