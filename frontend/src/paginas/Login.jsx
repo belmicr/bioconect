@@ -49,7 +49,7 @@ export default function Login() {
         </div>
         {error && <p className="error" role="alert">{error}</p>}
         <button className="boton" type="submit" disabled={enviando}>
-                {enviando ? 'Entrando…' : 'Entrar'}
+                {enviando ? 'Ingresando…' : 'Ingresar'}
         </button>
       </form>
     </div>
