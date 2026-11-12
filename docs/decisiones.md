@@ -495,3 +495,23 @@ Neon tiene `app_qa` y `app_prod`. **Lo comprobé con datos:** registré `qa-prue
 
 ### Uso de IA
 Usé Claude para armar los jobs de deploy, la plantilla de nginx y la publicación de imágenes, y para diagnosticar los errores de la lista. Lo verifiqué en Render (qué commit tiene cada servicio, Auto-Deploy en Off), en Neon (qué datos hay en cada base), probando el login en QA y PROD, midiendo el rollback con cronómetro y leyendo los logs de cada fallo.
+
+
+## TP9 — DevSecOps + observabilidad
+Más usada: GET /estudios (la de más pedidos entre las operaciones reales).
+Más lenta: POST /login, p95 1,86 s.
+Además: GET /estudios/{id}/pdf con failure rate 1 (el PDF se perdió al reiniciar el servicio).
+### Dependabot
+Mergeé el PR de Dependabot #47 (https://github.com/belmicr/bioconect/pull/47), que actualiza `actions/upload-artifact` de la versión 6 a la 7: es la action que publica los reportes de coverage en cada corrida del CI. Me animé a mergearlo porque el pipeline completo corrió en verde sobre ese PR (tests y umbral de cobertura del TP5, build de las dos imágenes y CodeQL), y porque el cambio no toca el código de la app, solo cómo el CI sube los reportes. Como es un cambio de versión mayor, antes leí las notas de la versión que Dependabot copia en el PR. `dependabot.yml` vigila pip (backend), npm (frontend) y github-actions; en *Security* están activas las alertas de Dependabot, las actualizaciones de seguridad, CodeQL (configuración por defecto) y la push protection.
+
+### El monitor y Sentry
+- **Monitor:** UptimeRobot sobre `https://bioconect-api-prod.onrender.com/health`, cada 5 minutos, con alerta por email. Suspendí PROD a las 21:09 y el aviso **DOWN llegó a las 21:13: 4 minutos**. Lo reanudé a las 21:17 y el aviso UP llegó a las __:__. Sin el monitor me habría enterado recién cuando un usuario no pudiera entrar. Al terminar pausé el monitor: despierto todo el mes consume casi todas las 750 horas gratuitas de Render.
+- **Más usada:** `GET /estudios` (la de más pedidos entre las operaciones reales).
+- **Más lenta:** `POST /login`, **p95 1,86 s**, contra menos de 100 ms del resto. Hipótesis: bcrypt es lento a propósito y además la primera consulta despierta la base serverless de Neon. Con ese dato abrí la tarjeta "Login lento en PROD: p95 1,86 s (dato de Sentry)" en el tablero (https://github.com/users/belmicr/projects/1).
+- **Error:** `RuntimeError: Falla de prueba del TP9` (BIOCONECT-API-1), desde un endpoint `/falla` que agregué temporalmente y saqué al terminar. Sentry también mostró `GET /estudios/{id}/pdf` con failure rate 1: los PDF se pierden cuando Render reinicia el servicio, porque el disco del plan gratuito no es persistente.
+
+### Problemas y uso de IA
+- **El proyecto de Sentry del back desapareció:** al tocar "Volver a la selección de plataforma" en el asistente, Sentry descartó el proyecto recién creado, y el `SENTRY_DSN` de Render apuntaba a un proyecto inexistente: el error no llegaba. Lo recreé, actualicé la variable y redesplegué.
+- **El monitor pregunta con HEAD:** el plan gratuito de UptimeRobot usa pedidos HEAD y FastAPI solo contesta GET por defecto (daría 405 y el monitor marcaría DOWN con PROD viva). Cambié la ruta a `@app.api_route("/health", methods=["GET", "HEAD"])` y lo comprobé con `curl -I` (200 OK) antes de crear el monitor.
+- **DSN público y privado:** el DSN del back va como variable de entorno solo en PROD; el del front va escrito en el código, porque solo sirve para enviar datos a Sentry, no para leerlos, y viaja igual en el JavaScript que baja el navegador.
+- **Uso de IA:** usé Claude para configurar Sentry en back y front, el cambio de `/health` y para diagnosticar el problema del DSN. Lo verifiqué viendo el error llegar a Sentry, la tabla de operaciones, el DOWN y el UP en el historial del monitor, y el PR de Dependabot en verde.

@@ -52,10 +52,7 @@ def health_db(session: Session = Depends(get_session)):
     session.execute(text("select 1"))
     return {"db": "ok"}
 
-# TEMPORAL (TP9): un error a propósito para verlo llegar a Sentry. Sacarlo al terminar.
-@app.get("/falla")
-def falla():
-    raise RuntimeError("Falla de prueba del TP9")
+
 # ---------- Helpers ----------
 
 def publico(u: Usuario) -> dict:
