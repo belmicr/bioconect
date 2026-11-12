@@ -241,3 +241,8 @@ backend-results/
 # Reportes de Playwright
 frontend/playwright-report/
 frontend/test-results/
+# Terraform: el estado y los valores locales NO van al repo (tienen contraseñas)
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
