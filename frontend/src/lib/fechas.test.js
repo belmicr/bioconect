@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   diaISO,
   esDiaHabil,
+  formatearDiaCarga,
   formatearFechaCarga,
   formatearFechaHora,
   horaDe,
@@ -36,6 +37,19 @@ describe('formatos de fecha', () => {
 
   it('horaDe devuelve la hora local de un turno', () => {
     expect(horaDe('2026-10-22T10:00:00')).toMatch(/10.00/)
+  })
+})
+
+describe('formatearDiaCarga', () => {
+  it('muestra solo el día, sin la hora', () => {
+    const texto = formatearDiaCarga('2026-11-12T15:20:00')
+
+    expect(texto).toContain('2026')
+    expect(texto).not.toMatch(/\d{2}:\d{2}/)
+  })
+
+  it('devuelve vacío si no hay fecha', () => {
+    expect(formatearDiaCarga(null)).toBe('')
   })
 })
 

@@ -1,33 +1,30 @@
-import { useState } from 'react'
 import { useAuth } from '../auth/AuthContext.jsx'
+import { iniciales } from '../lib/pacientes.js'
+import Logo from './Logo.jsx'
 
-export default function Panel({ titulo, pestanias }) {
+// El marco de los dos portales: la barra con la marca, quién está conectado y cerrar sesión.
+export default function Panel({ titulo, children }) {
   const { usuario, cerrarSesion } = useAuth()
-  const [activa, setActiva] = useState(pestanias[0].id)
-  const actual = pestanias.find((p) => p.id === activa) ?? pestanias[0]
 
   return (
-    <div className="app">
-      <header className="barra">
-        <div>
-          <strong>BioConect</strong>
-          <span className="subtitulo">{titulo}</span>
-        </div>
-        <div className="barra-usuario">
-          <span>{usuario.nombre} {usuario.apellido}</span>
-          <button className="boton secundario" onClick={cerrarSesion}>Cerrar sesión</button>
+    <div className="portal">
+      <header className="cabecera">
+        <div className="cabecera-interior">
+          <div className="marca">
+            <Logo tamanio={38} />
+            <div className="marca-textos">
+              <span className="marca-nombre">BioConect</span>
+              <span className="marca-portal">{titulo}</span>
+            </div>
+          </div>
+          <div className="cabecera-usuario">
+            <span className="avatar chico" aria-hidden="true">{iniciales(usuario)}</span>
+            <span className="cabecera-nombre">{usuario.nombre} {usuario.apellido}</span>
+            <button type="button" className="boton fantasma" onClick={cerrarSesion}>Cerrar sesión</button>
+          </div>
         </div>
       </header>
-      <nav className="pestanias" role="tablist">
-        {pestanias.map((p) => (
-          <button key={p.id} role="tab" aria-selected={p.id === actual.id}
-                  className={p.id === actual.id ? 'pestania activa' : 'pestania'}
-                  onClick={() => setActiva(p.id)}>
-            {p.titulo}
-          </button>
-        ))}
-      </nav>
-      <main className="contenido">{actual.contenido}</main>
+      <main className="portal-cuerpo">{children}</main>
     </div>
   )
 }

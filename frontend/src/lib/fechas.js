@@ -17,6 +17,12 @@ export function formatearFechaCarga(iso) {
   return `${FORMATO_FECHA.format(fecha)} ${FORMATO_HORA.format(fecha)}`
 }
 
+// Solo el día: "12 nov 2026", para listas donde la hora no aporta.
+export function formatearDiaCarga(iso) {
+  if (!iso) return ''
+  return FORMATO_FECHA.format(interpretarComoUtc(iso))
+}
+
 // Los turnos son hora local del laboratorio, sin zona: se leen tal cual.
 export function formatearFechaHora(iso) {
   if (!iso) return ''
