@@ -4,18 +4,25 @@ import { validarEmail, validarPassword } from './validaciones.js'
 // Sin caracteres que se confunden al dictarlos o copiarlos a mano (0/O, 1/l/I).
 export const CARACTERES_PASSWORD = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
-// Número al azar entre 0 y 1 con el generador criptográfico del navegador:
+// Bytes al azar del generador criptográfico del navegador.
 // Math.random no sirve para contraseñas porque se puede predecir.
-export function aleatorioSeguro() {
-  return crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32
+export function bytesSeguros(cantidad) {
+  return crypto.getRandomValues(new Uint8Array(cantidad))
 }
 
-export function generarPassword(aleatorio = aleatorioSeguro, largo = 10) {
-  let resultado = ''
-  for (let i = 0; i < largo; i += 1) {
-    resultado += CARACTERES_PASSWORD[Math.floor(aleatorio() * CARACTERES_PASSWORD.length)]
+// Muestreo por rechazo: de cada byte se usan los 6 bits de abajo (un número del 0 al 63)
+// y se descartan los que no tienen carácter en la lista. Así todos los caracteres salen
+// con la misma probabilidad. Dividir o usar módulo haría que algunos salgan un poco más
+// que otros: es lo que marca CodeQL (js/biased-cryptographic-random).
+export function generarPassword(obtenerBytes = bytesSeguros, largo = 10) {
+  const elegidos = []
+  while (elegidos.length < largo) {
+    for (const byte of obtenerBytes(largo)) {
+      const indice = byte & 0b111111
+      if (indice < CARACTERES_PASSWORD.length) elegidos.push(CARACTERES_PASSWORD[indice])
+    }
   }
-  return resultado
+  return elegidos.slice(0, largo).join('')
 }
 
 export function normalizarDni(dni) {

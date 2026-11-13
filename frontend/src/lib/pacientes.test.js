@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   CARACTERES_PASSWORD,
-  aleatorioSeguro,
+  bytesSeguros,
   buscarPacientes,
   formatearDni,
   fraseResumen,
@@ -19,30 +19,45 @@ const LIA = { id: 3, nombre: 'Lía', apellido: 'Acosta', dni: '38999111', email:
 const SIN_DNI = { id: 4, nombre: 'Rita', apellido: 'Zárate', dni: null, email: 'rita@mail.com' }
 
 describe('generarPassword', () => {
-  it('con un azar fijo da siempre la misma contraseña y del largo pedido', () => {
-    const siempreElPrimero = () => 0
+  it('con bytes fijos da siempre la misma contraseña y del largo pedido', () => {
+    const ceros = (cantidad) => new Uint8Array(cantidad)
 
-    expect(generarPassword(siempreElPrimero, 8)).toBe('aaaaaaaa')
+    expect(generarPassword(ceros, 8)).toBe('aaaaaaaa')
   })
 
-  it('usa solo caracteres que no se confunden', () => {
-    const casiUno = () => 0.9999
+  it('usa los 6 bits de abajo de cada byte: 64 y 0 dan el mismo carácter', () => {
+    const bytes = () => Uint8Array.from([64, 0, 128 + 54])
 
-    expect(generarPassword(casiUno, 3)).toBe('999')
+    expect(generarPassword(bytes, 3)).toBe(`aa${CARACTERES_PASSWORD[54]}`)
   })
 
-  it('por defecto genera 10 caracteres válidos con el azar seguro', () => {
+  it('descarta los valores sin carácter y pide más bytes hasta completar el largo', () => {
+    const tandas = [Uint8Array.from([63, 1, 55]), Uint8Array.from([2, 60, 3])]
+    let pedidos = 0
+    const obtener = () => tandas[pedidos++]
+
+    expect(generarPassword(obtener, 3)).toBe('bcd')
+    expect(pedidos).toBe(2)
+  })
+
+  it('la lista de caracteres entra en 6 bits y no tiene repetidos ni confundibles', () => {
+    expect(CARACTERES_PASSWORD.length).toBeLessThanOrEqual(64)
+    expect(new Set(CARACTERES_PASSWORD).size).toBe(CARACTERES_PASSWORD.length)
+    expect(CARACTERES_PASSWORD).not.toMatch(/[0O1lI]/)
+  })
+
+  it('por defecto genera 10 caracteres válidos con los bytes seguros', () => {
     const password = generarPassword()
 
     expect(password).toHaveLength(10)
     expect([...password].every((c) => CARACTERES_PASSWORD.includes(c))).toBe(true)
   })
 
-  it('el azar seguro está entre 0 y 1', () => {
-    const valor = aleatorioSeguro()
+  it('los bytes seguros vienen del generador criptográfico', () => {
+    const bytes = bytesSeguros(16)
 
-    expect(valor).toBeGreaterThanOrEqual(0)
-    expect(valor).toBeLessThan(1)
+    expect(bytes).toBeInstanceOf(Uint8Array)
+    expect(bytes).toHaveLength(16)
   })
 })
 
